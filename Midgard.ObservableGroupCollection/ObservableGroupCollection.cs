@@ -6,19 +6,20 @@ using System.Linq;
 
 namespace Midgard.Collections
 {
-    public class ObservableGroupCollection<TKey, TElement> : ReadOnlyObservableCollection<ObservableGroupCollection<TKey, TElement>.ObserableGroup> where TKey : IComparable<TKey>
+    public class ObservableGroupCollection<TKey, TElement> : ReadOnlyObservableCollection<ObservableGroupCollection<TKey, TElement>.ObserableGroup>
     {
         private readonly Func<TElement, TKey> selector;
         private readonly ObservableCollection<TElement> baseCollection;
         private readonly Dictionary<TKey, ObserableGroup> groupLookup = new Dictionary<TKey, ObserableGroup>();
         private readonly IComparer<TElement> elementOrder;
         private readonly ObservableCollection<ObserableGroup> storageCollection;
+        private readonly IComparer<TKey> keyOrder;
 
-
-        private ObservableGroupCollection(ObservableCollection<ObserableGroup> storageCollection, ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, IComparer<TElement> elementOrder) : base(storageCollection)
+        private ObservableGroupCollection(ObservableCollection<ObserableGroup> storageCollection, ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, IComparer<TKey> keyOrder, IComparer<TElement> elementOrder) : base(storageCollection)
         {
             this.storageCollection = storageCollection;
             this.elementOrder = elementOrder;
+            this.keyOrder = keyOrder;
             this.selector = selector;
             this.baseCollection = baseCollection;
 
@@ -26,19 +27,43 @@ namespace Midgard.Collections
             ReInitiliseCollection();
         }
 
-        public static ObservableGroupCollection<TKey, TElement> Create(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, IComparer<TElement> elementOrder)
+        public static ObservableGroupCollection<TKey, TElement> Create(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, IComparer<TKey> keyOrder, IComparer<TElement> elementOrder)
         {
             var backingStore = new ObservableCollection<ObserableGroup>();
-            return new ObservableGroupCollection<TKey, TElement>(backingStore, baseCollection, selector, elementOrder);
+            return new ObservableGroupCollection<TKey, TElement>(backingStore, baseCollection, selector, keyOrder, elementOrder);
         }
-        public static ObservableGroupCollection<TKey, TElement> Create(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, Func<TElement, IComparable> elementOrder)
+        public static ObservableGroupCollection<TKey, TElement> Create(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, Func<TKey, IComparable> keyOrder, Func<TElement, IComparable> elementOrder)
         {
-            return Create(baseCollection, selector, new Comparer(elementOrder));
+            return Create(baseCollection, selector, new Comparer<TKey>(keyOrder), new Comparer<TElement>(elementOrder));
         }
 
-        public static ObservableGroupCollection<TKey, TElement> Create<TComparable>(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector) where TComparable : TElement, IComparable
+        public static ObservableGroupCollection<TKey, TElement> Create<TKeyComparable, TElementComparable>(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector)
+            where TKeyComparable : TKey, IComparable
+            where TElementComparable : TElement, IComparable
         {
-            return Create(baseCollection, selector, new Comparer((x => (IComparable)x)));
+            return Create(baseCollection, selector, new Comparer<TKey>((x => (IComparable)x)), new Comparer<TElement>((x => (IComparable)x)));
+        }
+
+        public static ObservableGroupCollection<TKey, TElement> Create<TKeyComparable>(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, Func<TElement, IComparable> elementOrder)
+            where TKeyComparable : TKey, IComparable
+        {
+            return Create(baseCollection, selector, new Comparer<TKey>((x => (IComparable)x)), new Comparer<TElement>(elementOrder));
+        }
+        public static ObservableGroupCollection<TKey, TElement> Create<TKeyComparable>(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, IComparer<TElement> elementOrder)
+            where TKeyComparable : TKey, IComparable
+        {
+            return Create(baseCollection, selector, new Comparer<TKey>((x => (IComparable)x)), elementOrder);
+        }
+
+        public static ObservableGroupCollection<TKey, TElement> Create<TElementComparable>(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, Func<TKey, IComparable> keyOrder)
+            where TElementComparable : TElement, IComparable
+        {
+            return Create(baseCollection, selector, new Comparer<TKey>(keyOrder), new Comparer<TElement>((x => (IComparable)x)));
+        }
+        public static ObservableGroupCollection<TKey, TElement> Create<TElementComparable>(ObservableCollection<TElement> baseCollection, Func<TElement, TKey> selector, IComparer<TKey> keyOrder)
+            where TElementComparable : TElement, IComparable
+        {
+            return Create(baseCollection, selector, keyOrder, new Comparer<TElement>((x => (IComparable)x)));
         }
 
         private void BaseCollection_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -111,7 +136,7 @@ namespace Midgard.Collections
             if (this.groupLookup.ContainsKey(key))
                 return this.groupLookup[key];
 
-            var newGroup = ObserableGroup.Create(key);
+            var newGroup = ObserableGroup.Create(key, this.keyOrder);
             this.groupLookup[key] = newGroup;
 
             var insertionIndex = this.BinarySearch(newGroup);
@@ -124,34 +149,37 @@ namespace Midgard.Collections
             return newGroup;
         }
 
-        private class Comparer : IComparer<TElement>
+        private class Comparer<T> : IComparer<T>
         {
-            private Func<TElement, IComparable> elementOrder;
+            private Func<T, IComparable> elementOrder;
 
-            public Comparer(Func<TElement, IComparable> elementOrder) =>
+            public Comparer(Func<T, IComparable> elementOrder) =>
                 this.elementOrder = elementOrder;
 
-            public int Compare(TElement x, TElement y) => this.elementOrder(x).CompareTo(this.elementOrder(y));
+            public int Compare(T x, T y) => this.elementOrder(x).CompareTo(this.elementOrder(y));
         }
 
         public class ObserableGroup : ReadOnlyObservableCollection<TElement>, IGrouping<TKey, TElement>, IComparable<ObserableGroup>
         {
+            private readonly IComparer<TKey> comparer;
+
             public TKey Key { get; }
 
             internal ObservableCollection<TElement> Values { get; }
 
-            private ObserableGroup(TKey key, ObservableCollection<TElement> values) : base(values)
+            private ObserableGroup(TKey key, ObservableCollection<TElement> values, IComparer<TKey> comparer) : base(values)
             {
                 Key = key;
                 Values = values;
+                this.comparer = comparer;
             }
-            internal static ObserableGroup Create(TKey key)
+            internal static ObserableGroup Create(TKey key, IComparer<TKey> comparer)
             {
                 var collection = new ObservableCollection<TElement>();
-                return new ObserableGroup(key, collection);
+                return new ObserableGroup(key, collection, comparer);
             }
 
-            int IComparable<ObserableGroup>.CompareTo(ObserableGroup other) => Key.CompareTo(other.Key);
+            int IComparable<ObserableGroup>.CompareTo(ObserableGroup other) => this.comparer.Compare(Key, other.Key);
         }
     }
 }
