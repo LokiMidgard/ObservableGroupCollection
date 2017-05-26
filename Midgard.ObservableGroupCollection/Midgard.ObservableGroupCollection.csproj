@@ -9,7 +9,7 @@
     <PackageProjectUrl>https://github.com/LokiMidgard/ObservableGroupCollection</PackageProjectUrl>
     <PackageLicenseUrl>https://github.com/LokiMidgard/ObservableGroupCollection/blob/master/license.md</PackageLicenseUrl>
     <Description>This Package contains an implementation of an grouped ObservableCollection</Description>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <PackageTags>ObservableCollection; Grouping</PackageTags>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     
